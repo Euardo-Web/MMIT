@@ -5,7 +5,6 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const morgan = require('morgan');
-const WhatsAppBot = require('./whatsapp-bot');
 const zapi = require('./zapi-adapter');
 
 const app = express();
@@ -19,10 +18,6 @@ app.use(express.static('.'));
 
 // Configurações do banco de dados
 const DB_PATH = 'app_new.db';
-
-// Instância global do bot
-let botInstance = null;
-let botLock = false;
 
 // Inicializar banco de dados
 function initDatabase() {
@@ -70,21 +65,23 @@ function initDatabase() {
                 }
             });
 
-            // Tabela para mapeamento com provedores externos (ex: Z-API)
+            // Tabela para mapeamento com provedores externos (Z-API)
             db.run(`
-                CREATE TABLE IF NOT EXISTS zapi_mappings (
+                CREATE TABLE IF NOT EXISTS api_instances (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     instance_id TEXT NOT NULL,
-                    provider TEXT NOT NULL,
-                    zapi_instance_id TEXT,
-                    zapi_token TEXT,
-                    zapi_response TEXT,
+                    provider TEXT NOT NULL DEFAULT 'zapi',
+                    api_instance_id TEXT,
+                    api_token TEXT,
+                    api_response TEXT,
                     webhook_url TEXT,
-                    created_at TEXT NOT NULL
+                    status TEXT DEFAULT 'created',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 )
             `, (err2) => {
                 if (err2) {
-                    console.error('Erro ao criar tabela zapi_mappings:', err2);
+                    console.error('Erro ao criar tabela api_instances:', err2);
                 }
             });
         });
@@ -155,102 +152,55 @@ function getJob(jobId) {
     });
 }
 
-// Função para obter instância do bot
-function getBotInstance() {
-    return new Promise(async (resolve, reject) => {
-        if (botLock) {
-            // Aguardar um pouco se o bot estiver sendo inicializado
-            setTimeout(() => getBotInstance().then(resolve).catch(reject), 1000);
-            return;
-        }
-
-        if (botInstance) {
-            // Verificar se a instância ainda está viva
-            try {
-                await botInstance.driver.getCurrentUrl();
-                resolve(botInstance);
-                return;
-            } catch (e) {
-                console.log('⚠️  Instância anterior não está mais disponível, criando nova...');
-                botInstance = null;
+// Função para obter instância da API
+async function getApiInstance(instanceId) {
+    const db = new sqlite3.Database(DB_PATH);
+    return new Promise((resolve, reject) => {
+        db.get('SELECT * FROM api_instances WHERE instance_id = ? ORDER BY created_at DESC LIMIT 1', 
+            [instanceId], (err, row) => {
+            db.close();
+            if (err) {
+                reject(err);
+            } else {
+                resolve(row);
             }
-        }
-
-        botLock = true;
-        try {
-            console.log('Criando nova instância do bot...');
-            // Tempo de espera para dar tempo do QR renderizar
-            botInstance = new WhatsAppBot(null, 60000);
-
-            // Start with a safety timeout
-            const startTimeoutMs = 90000; // 90 seconds
-            console.log(`Iniciando o bot com timeout de ${startTimeoutMs}ms para criação do driver`);
-            
-            try {
-                const started = await Promise.race([
-                    botInstance.start(),
-                    new Promise((_, rejectTimeout) => 
-                        setTimeout(() => rejectTimeout(new Error('Timeout ao iniciar o driver')), startTimeoutMs)
-                    )
-                ]);
-
-                if (!started) {
-                    console.error('Falha ao iniciar bot - start() retornou falso');
-                    try {
-                        await botInstance.stop();
-                    } catch (stopErr) {
-                        console.warn('Erro ao parar instância após falha de start():', stopErr?.message || stopErr);
-                    }
-                    botInstance = null;
-                    reject(new Error('Falha ao iniciar bot - start() retornou falso'));
-                    return;
-                }
-            } catch (startErr) {
-                console.error('Erro ao iniciar driver do bot:', startErr?.stack || startErr);
-                // cleanup
-                try {
-                    if (botInstance) await botInstance.stop();
-                } catch (stopErr) {
-                    console.warn('Erro ao limpar instância do bot após falha:', stopErr?.message || stopErr);
-                }
-                botInstance = null;
-                reject(startErr);
-                return;
-            }
-            
-            console.log('✅ Bot iniciado com sucesso!');
-            resolve(botInstance);
-        } catch (error) {
-            console.error('Erro ao criar instância do bot:', error);
-            console.error('Possíveis causas:');
-            console.error('1. Chrome não está instalado');
-            console.error('2. Chromedriver não encontrado');
-            console.error('3. Porta já em uso');
-            console.error('4. Permissões insuficientes');
-            botInstance = null;
-            reject(error);
-        } finally {
-            botLock = false;
-        }
+        });
     });
 }
 
-// Função para enviar mensagens em background
-async function backgroundSendMessages(jobId, contacts, message) {
+// Função para enviar mensagens via API em background
+async function backgroundSendMessages(jobId, contacts, message, instanceId) {
     try {
         await updateJob(jobId, 'running');
         
-        const bot = await getBotInstance();
-        if (!bot) {
-            await updateJob(jobId, 'failed', null, 'Bot não disponível');
+        const apiInstance = await getApiInstance(instanceId);
+        if (!apiInstance || !apiInstance.api_instance_id) {
+            await updateJob(jobId, 'failed', null, 'Instância da API não disponível');
             return;
         }
         
-        console.log(`Enviando mensagens para ${contacts.length} contatos`);
-        const results = await bot.sendMessages(contacts, message);
+        console.log(`Enviando mensagens via API para ${contacts.length} contatos`);
+        let sent = 0;
+        let failed = 0;
         
-        if (results.sent && results.sent.length > 0) {
-            await updateJob(jobId, 'finished', `Mensagens enviadas para ${results.sent.length} contatos`);
+        for (const contact of contacts) {
+            try {
+                await zapi.sendMessage(apiInstance.api_instance_id, {
+                    to: contact,
+                    type: 'text',
+                    text: message
+                });
+                sent++;
+                // Rate limiting
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (error) {
+                console.error(`Erro ao enviar para ${contact}:`, error.message);
+                failed++;
+            }
+        }
+        
+        if (sent > 0) {
+            await updateJob(jobId, 'finished', `Mensagens enviadas para ${sent} contatos (${failed} falharam)`);
         } else {
             await updateJob(jobId, 'failed', null, 'Nenhuma mensagem foi enviada');
         }
@@ -266,120 +216,80 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
 
-app.post('/api/qr/refresh', async (req, res) => {
+// Endpoint para obter QR Code da API
+app.get('/api/qr/:instanceId', async (req, res) => {
     try {
-        if (!botInstance) {
-            return res.status(503).json({ 
-                error: 'Bot não inicializado',
-                message: 'Inicie o bot primeiro'
+        const instanceId = req.params.instanceId;
+        const apiInstance = await getApiInstance(instanceId);
+        
+        if (!apiInstance || !apiInstance.api_instance_id) {
+            return res.status(404).json({ 
+                error: 'Instância não encontrada',
+                message: 'Instância da API não configurada'
             });
         }
         
-        if (botInstance.isLoggedIn) {
-            return res.json({
-                status: 'already_logged_in',
-                message: 'Bot já está conectado ao WhatsApp'
-            });
-        }
+        const qrData = await zapi.getQRCode(apiInstance.api_instance_id);
         
-        console.log('🔄 Atualizando QR Code...');
-        
-        // Tentar clicar no botão de refresh do QR no WhatsApp Web
-        const { By } = require('selenium-webdriver');
-        try {
-            const refreshBtn = await botInstance.driver.findElement(By.css("[data-testid='refresh-large']"));
-            if (refreshBtn) {
-                await refreshBtn.click();
-                console.log('✅ Botão de refresh clicado');
+        if (qrData && qrData.qrcode) {
+            // Se for base64, converter para imagem
+            if (qrData.qrcode.startsWith('data:image')) {
+                const base64Data = qrData.qrcode.split(',')[1];
+                const buffer = Buffer.from(base64Data, 'base64');
                 
-                // Aguardar novo QR carregar
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                
-                // Capturar novo screenshot
-                const screenshot = await botInstance.driver.takeScreenshot();
-                const ssPath = path.join(__dirname, 'whatsapp_qr_debug.png');
-                fs.writeFileSync(ssPath, screenshot, 'base64');
-                
-                return res.json({
-                    status: 'refreshed',
-                    message: 'QR Code atualizado com sucesso'
-                });
+                res.setHeader('Content-Type', 'image/png');
+                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+                return res.send(buffer);
             }
-        } catch (e) {
-            console.log('⚠️  Botão de refresh não encontrado, tentando recarregar página...');
             
-            // Alternativa: recarregar a página
-            await botInstance.driver.navigate().refresh();
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            
-            const screenshot = await botInstance.driver.takeScreenshot();
-            const ssPath = path.join(__dirname, 'whatsapp_qr_debug.png');
-            fs.writeFileSync(ssPath, screenshot, 'base64');
-            
-            return res.json({
-                status: 'page_reloaded',
-                message: 'Página recarregada, novo QR Code disponível'
-            });
+            return res.json(qrData);
         }
+        
+        return res.status(404).json({
+            error: 'QR Code não disponível',
+            message: 'QR Code ainda não foi gerado pela API'
+        });
         
     } catch (error) {
-        console.error('❌ Erro ao atualizar QR Code:', error);
+        console.error('❌ Erro ao obter QR Code:', error);
         res.status(500).json({ 
-            error: 'Erro ao atualizar QR Code',
+            error: 'Erro ao obter QR Code',
             message: error.message 
         });
     }
 });
 
 
-// Melhorar endpoint /api/health com mais informações
+// Endpoint de health focado na API
 app.get('/api/health', async (req, res) => {
     try {
         const health = {
             status: 'ok',
             timestamp: new Date().toISOString(),
-            bot_status: 'not_started',
-            qr_available: false,
-            uptime: process.uptime()
+            api_status: 'available',
+            uptime: process.uptime(),
+            instances_count: 0
         };
         
-        if (botInstance) {
-            // Verificar se driver ainda está ativo
-            try {
-                await botInstance.driver.getCurrentUrl();
-                
-                if (botInstance.isLoggedIn) {
-                    health.bot_status = 'connected';
-                } else {
-                    health.bot_status = 'initializing';
-                }
-                
-                // Verificar se QR Code está disponível
-                const ssPath = path.join(__dirname, 'whatsapp_qr_debug.png');
-                health.qr_available = fs.existsSync(ssPath) || !!botInstance.getQRCodeData();
-                
-                // Tentar verificar se ainda está na página do QR ou já logou
-                try {
-                    const { By } = require('selenium-webdriver');
-                    const chatList = await botInstance.driver.findElement(By.css("[data-testid='chat-list']")).catch(() => null);
-                    
-                    if (chatList) {
-                        health.bot_status = 'connected';
-                        botInstance.isLoggedIn = true;
-                    } else if (health.qr_available) {
-                        // Ainda na tela de QR
-                        health.bot_status = 'waiting_qr_scan';
-                    }
-                } catch (e) {
-                    // Não conseguiu verificar elementos específicos
-                }
-            } catch (driverErr) {
-                // Driver não está mais ativo
-                console.warn('⚠️  Driver não está mais ativo:', driverErr.message);
-                health.bot_status = 'error';
-                health.error = 'Driver não está respondendo';
-                botInstance = null;
+        // Contar instâncias ativas
+        const db = new sqlite3.Database(DB_PATH);
+        db.get('SELECT COUNT(*) as count FROM instances', (err, row) => {
+            if (!err && row) {
+                health.instances_count = row.count;
             }
+            db.close();
+        });
+        
+        // Verificar se a API está respondendo
+        try {
+            const testResponse = await fetch(process.env.ZAPI_BASE_URL || 'https://api.z-api.io', {
+                method: 'HEAD',
+                timeout: 5000
+            });
+            health.api_status = testResponse.ok ? 'available' : 'error';
+        } catch (error) {
+            health.api_status = 'unavailable';
+            health.api_error = error.message;
         }
         
         res.json(health);
@@ -393,46 +303,40 @@ app.get('/api/health', async (req, res) => {
         });
     }
 });
-// Melhorar endpoint /api/bot/start
-app.post('/api/bot/start', async (req, res) => {
+// Endpoint para inicializar instância da API
+app.post('/api/instance/:instanceId/start', async (req, res) => {
     try {
-        if (botInstance) {
-            // Verificar se realmente está ativo
-            try {
-                await botInstance.driver.getCurrentUrl();
-                
-                return res.json({ 
-                    status: 'already_started', 
-                    message: 'Bot já está inicializado',
-                    bot_status: botInstance.isLoggedIn ? 'connected' : 'initializing'
-                });
-            } catch (e) {
-                // Driver morreu, limpar instância
-                console.log('⚠️  Driver anterior morreu, criando novo...');
-                botInstance = null;
-            }
+        const instanceId = req.params.instanceId;
+        const apiInstance = await getApiInstance(instanceId);
+        
+        if (!apiInstance || !apiInstance.api_instance_id) {
+            return res.status(404).json({ 
+                error: 'Instância não encontrada',
+                message: 'Instância da API não configurada'
+            });
         }
         
-        console.log('🚀 Inicializando bot...');
+        console.log(`🚀 Inicializando instância da API: ${apiInstance.api_instance_id}`);
         
-        // Responder imediatamente para não travar interface
-        res.json({ 
-            status: 'starting', 
-            message: 'Bot está sendo inicializado. Aguarde...',
-            bot_status: 'initializing'
+        const result = await zapi.startInstance(apiInstance.api_instance_id);
+        
+        // Atualizar status no banco
+        const db = new sqlite3.Database(DB_PATH);
+        const now = new Date().toISOString();
+        db.run('UPDATE api_instances SET status = ?, updated_at = ? WHERE instance_id = ?', 
+            ['starting', now, instanceId], (err) => {
+            if (err) console.error('Erro ao atualizar status:', err);
+            db.close();
         });
         
-        // Inicializar em background
-        getBotInstance()
-            .then(() => {
-                console.log('✅ Bot inicializado com sucesso');
-            })
-            .catch(error => {
-                console.error('❌ Erro ao inicializar bot:', error);
-            });
+        res.json({ 
+            status: 'starting', 
+            message: 'Instância da API está sendo inicializada',
+            api_response: result
+        });
         
     } catch (error) {
-        console.error('Erro ao iniciar bot:', error);
+        console.error('Erro ao iniciar instância da API:', error);
         res.status(500).json({ 
             status: 'error', 
             message: error.message 
@@ -440,116 +344,7 @@ app.post('/api/bot/start', async (req, res) => {
     }
 });
 
-// Adicionar endpoint para obter logs (útil para debug)
-const logs = [];
-const MAX_LOGS = 100;
-
-// Interceptar console.log para armazenar logs
-const originalConsoleLog = console.log;
-console.log = function(...args) {
-    const timestamp = new Date().toISOString();
-    const message = args.map(arg => 
-        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ');
-    
-    logs.push({ timestamp, message, level: 'info' });
-    if (logs.length > MAX_LOGS) {
-        logs.shift();
-    }
-    
-    originalConsoleLog.apply(console, args);
-};
-
-const originalConsoleError = console.error;
-console.error = function(...args) {
-    const timestamp = new Date().toISOString();
-    const message = args.map(arg => 
-        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ');
-    
-    logs.push({ timestamp, message, level: 'error' });
-    if (logs.length > MAX_LOGS) {
-        logs.shift();
-    }
-    
-    originalConsoleError.apply(console, args);
-};
-
-app.get('/api/logs', (req, res) => {
-    const limit = parseInt(req.query.limit) || 50;
-    const level = req.query.level; // 'info', 'error', ou undefined para todos
-    
-    let filteredLogs = logs;
-    
-    if (level) {
-        filteredLogs = logs.filter(log => log.level === level);
-    }
-    
-    res.json({
-        logs: filteredLogs.slice(-limit),
-        total: filteredLogs.length
-    });
-});
-
-// Endpoint específico para diagnóstico do QR code
-app.get('/api/debug/qr', async (req, res) => {
-    try {
-        const qrDebugInfo = {
-            status: 'checking',
-            timestamp: new Date().toISOString(),
-            qr_file: {
-                exists: false,
-                path: '',
-                size: 0,
-                age: 0
-            },
-            bot_state: {
-                initialized: !!botInstance,
-                logged_in: botInstance ? botInstance.isLoggedIn : false
-            },
-            chrome_info: {}
-        };
-
-        // Verificar arquivo do QR
-        const ssPath = path.join(__dirname, 'whatsapp_qr_debug.png');
-        if (fs.existsSync(ssPath)) {
-            const stats = fs.statSync(ssPath);
-            qrDebugInfo.qr_file = {
-                exists: true,
-                path: ssPath,
-                size: stats.size,
-                age: Date.now() - stats.mtimeMs,
-                last_modified: stats.mtime
-            };
-        }
-
-        // Verificar estado do Chrome/driver
-        if (botInstance && botInstance.driver) {
-            try {
-                const url = await botInstance.driver.getCurrentUrl();
-                qrDebugInfo.chrome_info = {
-                    current_url: url,
-                    headless: botInstance.headless,
-                    driver_ok: true
-                };
-            } catch (e) {
-                qrDebugInfo.chrome_info = {
-                    error: 'Driver não está respondendo: ' + e.message,
-                    driver_ok: false
-                };
-            }
-        }
-
-        res.json(qrDebugInfo);
-    } catch (error) {
-        res.status(500).json({
-            error: 'Erro ao obter diagnóstico do QR',
-            message: error.message
-        });
-    }
-});
-
-// Adicionar endpoint para debug info
+// Endpoint para debug simplificado
 app.get('/api/debug', async (req, res) => {
     try {
         const debugInfo = {
@@ -560,31 +355,13 @@ app.get('/api/debug', async (req, res) => {
             env: {
                 NODE_ENV: process.env.NODE_ENV,
                 PORT: process.env.PORT,
-                DISPLAY: process.env.DISPLAY
+                ZAPI_BASE_URL: process.env.ZAPI_BASE_URL ? 'configurado' : 'não configurado',
+                ZAPI_TOKEN: process.env.ZAPI_TOKEN ? 'configurado' : 'não configurado'
             },
-            bot: {
-                exists: !!botInstance,
-                isLoggedIn: botInstance ? botInstance.isLoggedIn : false,
-                headless: botInstance ? botInstance.headless : null
-            },
-            files: {
-                qr_screenshot: fs.existsSync(path.join(__dirname, 'whatsapp_qr_debug.png')),
-                database: fs.existsSync(path.join(__dirname, 'app_new.db')),
-                chrome_profile: fs.existsSync(path.join(__dirname, 'chrome-profile'))
+            database: {
+                exists: fs.existsSync(path.join(__dirname, 'app_new.db'))
             }
         };
-        
-        // Verificar Chrome
-        const { execSync } = require('child_process');
-        try {
-            const chromeVersion = execSync('google-chrome --version || google-chrome-stable --version', {
-                encoding: 'utf8',
-                timeout: 3000
-            }).trim();
-            debugInfo.chrome_version = chromeVersion;
-        } catch (e) {
-            debugInfo.chrome_version = 'Não encontrado';
-        }
         
         res.json(debugInfo);
         
@@ -609,7 +386,7 @@ app.post('/api/zapi/webhook', express.json(), async (req, res) => {
 
         const db = new sqlite3.Database(DB_PATH);
         // find mapping
-        db.get('SELECT * FROM zapi_mappings WHERE zapi_instance_id = ? ORDER BY created_at DESC LIMIT 1', [payload.instanceId], (err, map) => {
+        db.get('SELECT * FROM api_instances WHERE api_instance_id = ? ORDER BY created_at DESC LIMIT 1', [payload.instanceId], (err, map) => {
             if (err) {
                 console.error('Erro ao consultar mapping por webhook:', err);
                 db.close();
@@ -617,23 +394,30 @@ app.post('/api/zapi/webhook', express.json(), async (req, res) => {
             }
 
             if (!map) {
-                console.warn('Mapping Z-API não encontrado para instanceId:', payload.instanceId);
+                console.warn('Mapping da API não encontrado para instanceId:', payload.instanceId);
                 db.close();
                 return res.status(404).json({ error: 'mapping_not_found' });
             }
 
-            // Update instances table status (provider field exists)
+            // Update instances table status
             const now = new Date().toISOString();
             db.run('UPDATE instances SET updated_at = ? WHERE id = ?', [now, map.instance_id], function(uErr) {
                 if (uErr) console.error('Erro ao atualizar instance updated_at:', uErr);
             });
 
-            // Save event in mapping zapi_response (append)
+            // Update API instance status based on event
+            let newStatus = map.status;
+            if (payload.event === 'connected') newStatus = 'connected';
+            else if (payload.event === 'disconnected') newStatus = 'disconnected';
+
+            // Save event in mapping api_response (append)
             let respObj = {};
-            try { respObj = map.zapi_response ? JSON.parse(map.zapi_response) : {}; } catch(e) { respObj = {}; }
+            try { respObj = map.api_response ? JSON.parse(map.api_response) : {}; } catch(e) { respObj = {}; }
             respObj.last_event = payload;
-            db.run('UPDATE zapi_mappings SET zapi_response = ? WHERE id = ?', [JSON.stringify(respObj), map.id], (sErr) => {
-                if (sErr) console.error('Erro ao atualizar mapping zapi_response:', sErr);
+            
+            db.run('UPDATE api_instances SET api_response = ?, status = ?, updated_at = ? WHERE id = ?', 
+                [JSON.stringify(respObj), newStatus, now, map.id], (sErr) => {
+                if (sErr) console.error('Erro ao atualizar mapping api_response:', sErr);
                 db.close();
                 return res.json({ ok: true });
             });
@@ -645,52 +429,70 @@ app.post('/api/zapi/webhook', express.json(), async (req, res) => {
     }
 });
 
-app.get('/api/status', async (req, res) => {
+// Endpoint para verificar status de uma instância específica
+app.get('/api/instance/:instanceId/status', async (req, res) => {
     try {
-        if (!botInstance) {
-            return res.json({ connected: false, status: 'not_started' });
-        }
+        const instanceId = req.params.instanceId;
+        const apiInstance = await getApiInstance(instanceId);
         
-        if (botInstance.isLoggedIn) {
-            return res.json({ connected: true, status: 'connected' });
-        }
-        
-        // Verificação rápida
-        try {
-            const { By } = require('selenium-webdriver');
-            await botInstance.driver.findElement(By.css("[data-testid='chat-list']"));
-            botInstance.isLoggedIn = true;
-            return res.json({ connected: true, status: 'connected' });
-        } catch (e) {
-            return res.json({ connected: false, status: 'waiting_login' });
-        }
-        
-    } catch (error) {
-        res.status(500).json({ connected: false, status: 'error', error: error.message });
-    }
-});
-
-
-app.post('/api/bot/stop', async (req, res) => {
-    try {
-        if (!botInstance) {
+        if (!apiInstance || !apiInstance.api_instance_id) {
             return res.json({ 
-                status: 'not_started', 
-                message: 'Bot não está inicializado'
+                connected: false, 
+                status: 'not_configured',
+                message: 'Instância da API não configurada'
             });
         }
         
-        console.log('🛑 Parando bot...');
-        await botInstance.stop();
-        botInstance = null;
+        const status = await zapi.getStatus(apiInstance.api_instance_id);
+        
+        res.json({ 
+            connected: status && status.connected === true, 
+            status: status ? status.status : 'unknown',
+            api_response: status
+        });
+        
+    } catch (error) {
+        console.error('Erro ao verificar status:', error);
+        res.status(500).json({ 
+            connected: false, 
+            status: 'error', 
+            error: error.message 
+        });
+    }
+});
+
+// Endpoint para parar instância da API
+app.post('/api/instance/:instanceId/stop', async (req, res) => {
+    try {
+        const instanceId = req.params.instanceId;
+        const apiInstance = await getApiInstance(instanceId);
+        
+        if (!apiInstance || !apiInstance.api_instance_id) {
+            return res.status(404).json({ 
+                error: 'Instância não encontrada',
+                message: 'Instância da API não configurada'
+            });
+        }
+        
+        console.log(`🛑 Parando instância da API: ${apiInstance.api_instance_id}`);
+        await zapi.stopInstance(apiInstance.api_instance_id);
+        
+        // Atualizar status no banco
+        const db = new sqlite3.Database(DB_PATH);
+        const now = new Date().toISOString();
+        db.run('UPDATE api_instances SET status = ?, updated_at = ? WHERE instance_id = ?', 
+            ['stopped', now, instanceId], (err) => {
+            if (err) console.error('Erro ao atualizar status:', err);
+            db.close();
+        });
         
         res.json({ 
             status: 'stopped', 
-            message: 'Bot parado com sucesso'
+            message: 'Instância da API parada com sucesso'
         });
         
     } catch (error) {
-        console.error('Erro ao parar bot:', error);
+        console.error('Erro ao parar instância da API:', error);
         res.status(500).json({ 
             status: 'error', 
             message: error.message 
@@ -698,92 +500,37 @@ app.post('/api/bot/stop', async (req, res) => {
     }
 });
 
-app.post('/api/bot/restart', async (req, res) => {
+// Endpoint para obter contatos via API
+app.get('/api/instance/:instanceId/contacts', async (req, res) => {
     try {
-        console.log('🔄 Reiniciando bot...');
+        const instanceId = req.params.instanceId;
+        console.log(`📞 Solicitação de contatos para instância: ${instanceId}`);
         
-        // Verificar e registrar estado atual
-        const initialState = {
-            bot_exists: !!botInstance,
-            is_logged_in: botInstance ? botInstance.isLoggedIn : false,
-            qr_file_exists: fs.existsSync(path.join(__dirname, 'whatsapp_qr_debug.png'))
-        };
-        console.log('Estado atual:', initialState);
-        
-        // Parar bot atual se existir
-        if (botInstance) {
-            console.log('Parando instância atual do bot...');
-            await botInstance.stop();
-            botInstance = null;
-        }
-        
-        // Limpar arquivos antigos
-        console.log('Limpando arquivos temporários...');
-        const filesToClean = [
-            'whatsapp_qr_debug.png',
-            'whatsapp_qr_debug_noqrcode.png',
-            'whatsapp_page.html'
-        ];
-        
-        filesToClean.forEach(file => {
-            const filePath = path.join(__dirname, file);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-                console.log(`Arquivo removido: ${file}`);
-            }
-        });
-        
-        // Aguardar um pouco mais para garantir
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // Inicializar novo bot com timeout maior
-        console.log('Iniciando nova instância do bot...');
-        const bot = await getBotInstance();
-        
-        if (bot) {
-            res.json({ 
-                status: 'restarted', 
-                message: 'Bot reiniciado com sucesso',
-                bot_status: bot.isLoggedIn ? 'connected' : 'initializing'
-            });
-        } else {
-            res.status(500).json({ 
-                status: 'error', 
-                message: 'Falha ao reiniciar bot' 
+        const apiInstance = await getApiInstance(instanceId);
+        if (!apiInstance || !apiInstance.api_instance_id) {
+            return res.status(404).json({ 
+                error: 'Instância não encontrada',
+                message: 'Instância da API não configurada'
             });
         }
         
-    } catch (error) {
-        console.error('Erro ao reiniciar bot:', error);
-        res.status(500).json({ 
-            status: 'error', 
-            message: error.message 
-        });
-    }
-});
-
-app.get('/api/contacts', async (req, res) => {
-    try {
-        console.log('📞 Solicitação de contatos recebida...');
-        
-        // Verificar se o bot está disponível sem tentar inicializar
-        if (!botInstance) {
-            return res.status(503).json({ 
-                error: 'Bot não inicializado. Acesse a página principal primeiro para inicializar o bot.' 
-            });
-        }
-        
-        if (!botInstance.isLoggedIn) {
+        // Verificar se a instância está conectada
+        const status = await zapi.getStatus(apiInstance.api_instance_id);
+        if (!status || !status.connected) {
             return res.status(401).json({ 
-                error: 'Bot não está logado no WhatsApp Web. Escaneie o QR Code primeiro.' 
+                error: 'Instância não está conectada',
+                message: 'Conecte a instância primeiro escaneando o QR Code'
             });
         }
         
-        console.log('🔍 Obtendo lista de contatos...');
-        const contacts = await botInstance.getContacts();
-        
-        console.log(`✅ ${contacts.length} contatos obtidos com sucesso`);
-        res.json({ contacts: contacts, count: contacts.length });
+        // Nota: A maioria das APIs de WhatsApp não fornece lista de contatos
+        // por questões de privacidade. Retornar lista vazia ou erro apropriado.
+        console.log('ℹ️  APIs de WhatsApp geralmente não fornecem lista de contatos');
+        res.json({ 
+            contacts: [], 
+            count: 0,
+            message: 'APIs de WhatsApp não fornecem lista de contatos por questões de privacidade'
+        });
         
     } catch (error) {
         console.error('❌ Erro ao obter contatos:', error);
@@ -791,90 +538,24 @@ app.get('/api/contacts', async (req, res) => {
     }
 });
 
-// Substituir o endpoint /api/qr existente por esta versão melhorada:
-
+// Endpoint genérico para QR code (redireciona para primeira instância disponível)
 app.get('/api/qr', async (req, res) => {
     try {
-        const ssPath = path.join(__dirname, 'whatsapp_qr_debug.png');
-        
-        // Se o bot não está inicializado, inicializar automaticamente
-        if (!botInstance) {
-            console.log('🤖 Bot não inicializado, iniciando automaticamente...');
-            try {
-                await getBotInstance();
-                // Aguardar um pouco para o QR ser capturado
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            } catch (error) {
-                console.error('❌ Erro ao inicializar bot:', error);
-                return res.status(503).json({ 
-                    error: 'Falha ao inicializar bot',
-                    message: error.message
+        // Buscar primeira instância disponível
+        const db = new sqlite3.Database(DB_PATH);
+        db.get('SELECT * FROM instances ORDER BY created_at DESC LIMIT 1', (err, row) => {
+            db.close();
+            if (err || !row) {
+                return res.status(404).json({
+                    error: 'Nenhuma instância encontrada',
+                    message: 'Crie uma instância primeiro'
                 });
             }
-        }
-        
-        // Verificar se já está conectado
-        if (botInstance && botInstance.isLoggedIn) {
-            return res.status(200).json({
-                error: 'Já conectado',
-                message: 'WhatsApp já está conectado',
-                status: 'connected'
-            });
-        }
-        
-        // Tentar servir screenshot do disco
-        if (fs.existsSync(ssPath)) {
-            const stats = fs.statSync(ssPath);
-            const ageSeconds = (Date.now() - stats.mtimeMs) / 1000;
             
-            // Se o QR tem mais de 30 segundos, tentar renovar
-            if (ageSeconds > 30) {
-                console.log(`⚠️  QR Code antigo (${Math.round(ageSeconds)}s), tentando renovar...`);
-                try {
-                    const { By } = require('selenium-webdriver');
-                    const refreshBtn = await botInstance.driver.findElement(By.css("[data-testid='refresh-large']"));
-                    if (refreshBtn) {
-                        await refreshBtn.click();
-                        await new Promise(resolve => setTimeout(resolve, 3000));
-                    }
-                } catch (e) {
-                    console.log('⚠️  Não foi possível renovar QR Code automaticamente');
-                }
-            }
-            
-            console.log(`📸 Servindo QR Code do disco (${stats.size} bytes, idade: ${Math.round(ageSeconds)}s)`);
-            
-            res.setHeader('Content-Type', 'image/png');
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            res.setHeader('Pragma', 'no-cache');
-            res.setHeader('Expires', '0');
-            
-            return res.sendFile(ssPath);
-        }
-        
-        // Tentar obter da memória do bot
-        if (botInstance && botInstance.getQRCodeData) {
-            const qrData = botInstance.getQRCodeData();
-            if (qrData) {
-                console.log('📸 Servindo QR Code da memória');
-                const buffer = Buffer.from(qrData, 'base64');
-                
-                res.setHeader('Content-Type', 'image/png');
-                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-                res.setHeader('Pragma', 'no-cache');
-                res.setHeader('Expires', '0');
-                
-                return res.send(buffer);
-            }
-        }
-        
-        // QR Code não disponível
-        console.log('⚠️  QR Code não disponível após tentativas');
-        return res.status(404).json({ 
-            error: 'QR Code não disponível',
-            message: 'Aguarde alguns segundos e tente novamente',
-            suggestion: 'O QR Code está sendo gerado'
+            // Redirecionar para QR da instância específica
+            res.redirect(`/api/qr/${row.id}`);
         });
+        
     } catch (error) {
         console.error('❌ Erro ao processar requisição de QR Code:', error);
         return res.status(500).json({
@@ -885,8 +566,10 @@ app.get('/api/qr', async (req, res) => {
 });
 
 
-app.post('/api/send', async (req, res) => {
+// Endpoint para enviar mensagens via instância específica
+app.post('/api/instance/:instanceId/send', async (req, res) => {
     try {
+        const instanceId = req.params.instanceId;
         const { contacts, message } = req.body;
         
         // Validação mais robusta
@@ -898,14 +581,87 @@ app.post('/api/send', async (req, res) => {
             return res.status(400).json({ error: 'Mensagem é obrigatória' });
         }
         
+        // Verificar se instância existe
+        const apiInstance = await getApiInstance(instanceId);
+        if (!apiInstance || !apiInstance.api_instance_id) {
+            return res.status(404).json({ 
+                error: 'Instância não encontrada',
+                message: 'Instância da API não configurada'
+            });
+        }
+        
         // Criar job
         const jobId = uuidv4();
         await createJob(jobId, 'queued');
         
         // Iniciar envio em background
-        backgroundSendMessages(jobId, contacts, message).catch(console.error);
+        backgroundSendMessages(jobId, contacts, message, instanceId).catch(console.error);
         
-        res.status(202).json({ job_id: jobId, status: 'queued' });
+        res.status(202).json({ 
+            job_id: jobId, 
+            status: 'queued',
+            instance_id: instanceId
+        });
+        
+    } catch (error) {
+        console.error('Erro ao enviar mensagens:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint genérico de envio (usa primeira instância disponível)
+app.post('/api/send', async (req, res) => {
+    try {
+        const { contacts, message } = req.body;
+        
+        // Validação
+        if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
+            return res.status(400).json({ error: 'Pelo menos um contato é obrigatório' });
+        }
+        
+        if (!message || typeof message !== 'string' || message.trim().length === 0) {
+            return res.status(400).json({ error: 'Mensagem é obrigatória' });
+        }
+        
+        // Buscar primeira instância disponível
+        const db = new sqlite3.Database(DB_PATH);
+        db.get('SELECT * FROM instances ORDER BY created_at DESC LIMIT 1', async (err, row) => {
+            db.close();
+            if (err || !row) {
+                return res.status(404).json({
+                    error: 'Nenhuma instância encontrada',
+                    message: 'Crie uma instância primeiro'
+                });
+            }
+            
+            try {
+                // Verificar se instância da API existe
+                const apiInstance = await getApiInstance(row.id);
+                if (!apiInstance || !apiInstance.api_instance_id) {
+                    return res.status(404).json({ 
+                        error: 'Instância da API não encontrada',
+                        message: 'Instância da API não configurada'
+                    });
+                }
+                
+                // Criar job
+                const jobId = uuidv4();
+                await createJob(jobId, 'queued');
+                
+                // Iniciar envio em background
+                backgroundSendMessages(jobId, contacts, message, row.id).catch(console.error);
+                
+                res.status(202).json({ 
+                    job_id: jobId, 
+                    status: 'queued',
+                    instance_id: row.id
+                });
+                
+            } catch (error) {
+                console.error('Erro ao processar envio:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
         
     } catch (error) {
         console.error('Erro ao enviar mensagens:', error);
@@ -949,22 +705,27 @@ app.get('/api/instances', (req, res) => {
             updated_at: row.updated_at
         }));
 
-        // Load mappings
-        db.all('SELECT * FROM zapi_mappings WHERE instance_id IN (' + rows.map(r => `'${r.id}'`).join(',') + ')', (mErr, maps) => {
-            if (!mErr && maps) {
-                const byInstance = {};
-                maps.forEach(m => { byInstance[m.instance_id] = m; });
-                instances.forEach(inst => {
-                    if (byInstance[inst.id]) {
-                        inst.provider = byInstance[inst.id].provider;
-                        inst.zapi_instance_id = byInstance[inst.id].zapi_instance_id;
-                        inst.zapi_token = byInstance[inst.id].zapi_token;
-                    }
-                });
-            }
+        // Load API mappings
+        if (rows.length > 0) {
+            db.all('SELECT * FROM api_instances WHERE instance_id IN (' + rows.map(r => `'${r.id}'`).join(',') + ')', (mErr, maps) => {
+                if (!mErr && maps) {
+                    const byInstance = {};
+                    maps.forEach(m => { byInstance[m.instance_id] = m; });
+                    instances.forEach(inst => {
+                        if (byInstance[inst.id]) {
+                            inst.provider = byInstance[inst.id].provider;
+                            inst.api_instance_id = byInstance[inst.id].api_instance_id;
+                            inst.api_token = byInstance[inst.id].api_token;
+                            inst.api_status = byInstance[inst.id].status;
+                        }
+                    });
+                }
 
+                res.json({ instances });
+            });
+        } else {
             res.json({ instances });
-        });
+        }
     });
     
     db.close();
@@ -990,11 +751,12 @@ app.get('/api/instances/:instanceId', (req, res) => {
                 updated_at: row.updated_at
             };
 
-            db.get('SELECT * FROM zapi_mappings WHERE instance_id = ? ORDER BY created_at DESC LIMIT 1', [row.id], (mErr, mapRow) => {
+            db.get('SELECT * FROM api_instances WHERE instance_id = ? ORDER BY created_at DESC LIMIT 1', [row.id], (mErr, mapRow) => {
                 if (!mErr && mapRow) {
-                    instance.zapi_instance_id = mapRow.zapi_instance_id;
-                    instance.zapi_token = mapRow.zapi_token;
-                    instance.zapi_response = mapRow.zapi_response ? JSON.parse(mapRow.zapi_response) : null;
+                    instance.api_instance_id = mapRow.api_instance_id;
+                    instance.api_token = mapRow.api_token;
+                    instance.api_response = mapRow.api_response ? JSON.parse(mapRow.api_response) : null;
+                    instance.api_status = mapRow.status;
                 }
                 res.json(instance);
             });
@@ -1037,56 +799,47 @@ app.post('/api/instances', (req, res) => {
                     return;
                 }
 
-                // If provider is zapi, attempt to create a remote instance and save mapping
-                if (provider && provider === 'zapi') {
-                    try {
-                        const zapiResp = await zapi.createInstance(name);
-                        const zapiInstanceId = zapiResp && (zapiResp.instanceId || zapiResp.id || zapiResp.sessionId) ? (zapiResp.instanceId || zapiResp.id || zapiResp.sessionId) : null;
-                        const zapiToken = zapiResp && zapiResp.token ? zapiResp.token : (process.env.ZAPI_TOKEN || null);
+                // Sempre criar instância na API (Z-API por padrão)
+                const finalProvider = provider || 'zapi';
+                try {
+                    const apiResp = await zapi.createInstance(name);
+                    const apiInstanceId = apiResp && (apiResp.instanceId || apiResp.id || apiResp.sessionId) ? (apiResp.instanceId || apiResp.id || apiResp.sessionId) : null;
+                    const apiToken = apiResp && apiResp.token ? apiResp.token : (process.env.ZAPI_TOKEN || null);
 
-                        db.run(
-                            'INSERT INTO zapi_mappings (instance_id, provider, zapi_instance_id, zapi_token, zapi_response, webhook_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                            [instanceId, 'zapi', zapiInstanceId, zapiToken, JSON.stringify(zapiResp || {}), null, now],
-                            function(mapErr) {
-                                if (mapErr) console.error('Erro ao salvar mapping zapi:', mapErr);
-                            }
-                        );
+                    db.run(
+                        'INSERT INTO api_instances (instance_id, provider, api_instance_id, api_token, api_response, webhook_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [instanceId, finalProvider, apiInstanceId, apiToken, JSON.stringify(apiResp || {}), null, 'created', now, now],
+                        function(mapErr) {
+                            if (mapErr) console.error('Erro ao salvar mapping da API:', mapErr);
+                        }
+                    );
 
-                        res.status(201).json({
-                            id: instanceId,
-                            name: name,
-                            contacts: contacts,
-                            message: message,
-                            provider: 'zapi',
-                            zapi_instance_id: zapiInstanceId,
-                            created_at: now,
-                            updated_at: now
-                        });
-                    } catch (e) {
-                        console.error('Erro ao criar instância zapi:', e);
-                        // Respond but indicate provider creation failed
-                        res.status(201).json({
-                            id: instanceId,
-                            name: name,
-                            contacts: contacts,
-                            message: message,
-                            provider: 'zapi',
-                            zapi_error: e.message,
-                            created_at: now,
-                            updated_at: now
-                        });
-                    } finally {
-                        db.close();
-                    }
-                } else {
                     res.status(201).json({
                         id: instanceId,
                         name: name,
                         contacts: contacts,
                         message: message,
+                        provider: finalProvider,
+                        api_instance_id: apiInstanceId,
+                        api_status: 'created',
                         created_at: now,
                         updated_at: now
                     });
+                } catch (e) {
+                    console.error('Erro ao criar instância na API:', e);
+                    // Criar instância local mesmo se API falhar
+                    res.status(201).json({
+                        id: instanceId,
+                        name: name,
+                        contacts: contacts,
+                        message: message,
+                        provider: finalProvider,
+                        api_error: e.message,
+                        api_status: 'error',
+                        created_at: now,
+                        updated_at: now
+                    });
+                } finally {
                     db.close();
                 }
             }
@@ -1206,9 +959,6 @@ async function startServer() {
         process.on('SIGTERM', async () => {
             console.log('SIGTERM recebido. Parando servidor...');
             try {
-                if (botInstance) {
-                    await botInstance.stop();
-                }
                 server.close(() => process.exit(0));
             } catch (e) {
                 console.error('Erro ao encerrar durante SIGTERM:', e);
@@ -1235,12 +985,6 @@ async function gracefulShutdown(signal) {
     console.log(`\n🛑 Recebido sinal ${signal}, iniciando shutdown graceful...`);
     
     try {
-        if (botInstance) {
-            console.log('Parando instância do bot...');
-            await botInstance.stop();
-            console.log('Bot parado com sucesso');
-        }
-        
         console.log('Encerrando servidor...');
         process.exit(0);
     } catch (error) {

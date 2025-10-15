@@ -229,7 +229,20 @@
                 statusText.textContent = 'Carregando QR Code...';
                 qrStatus.className = 'qr-status loading';
                 
-                const response = await fetch('/api/qr?' + new Date().getTime());
+                // Primeiro, buscar instâncias disponíveis
+                const instancesResponse = await fetch('/api/instances');
+                if (!instancesResponse.ok) {
+                    throw new Error('Nenhuma instância encontrada. Crie uma instância primeiro.');
+                }
+                
+                const instancesData = await instancesResponse.json();
+                if (!instancesData.instances || instancesData.instances.length === 0) {
+                    throw new Error('Nenhuma instância encontrada. Crie uma instância primeiro.');
+                }
+                
+                // Usar primeira instância disponível
+                const instance = instancesData.instances[0];
+                const response = await fetch(`/api/qr/${instance.id}?` + new Date().getTime());
                 
                 if (response.ok) {
                     const contentType = response.headers.get('content-type');
@@ -282,7 +295,7 @@
                             loadQRCode();
                         }, 3000);
                     } else {
-                        throw new Error('QR Code não disponível após várias tentativas. Tente reiniciar o bot.');
+                        throw new Error('QR Code não disponível após várias tentativas. Verifique se a instância está configurada corretamente.');
                     }
                 } else {
                     const error = await response.json().catch(() => ({error: 'Erro desconhecido'}));

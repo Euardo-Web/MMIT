@@ -29,18 +29,18 @@
           </div>
           <div class="actions">
             <button class="btn btn-primary"><span class="material-icons">add</span> Novo Grupo</button>
-            <button id="init-bot" class="btn btn-success" style="margin-left:8px"><span class="material-icons">smart_toy</span> Inicializar Bot</button>
-            <button id="restart-bot" class="btn btn-warning" style="margin-left:8px"><span class="material-icons">refresh</span> Reiniciar Bot</button>
-            <button id="stop-bot" class="btn btn-danger" style="margin-left:8px"><span class="material-icons">stop</span> Parar Bot</button>
-            <button id="load-groups" class="btn btn-secondary" style="margin-left:8px"><span class="material-icons">refresh</span> Carregar Grupos</button>
+            <button id="init-bot" class="btn btn-success" style="margin-left:8px"><span class="material-icons">smart_toy</span> Inicializar Instância</button>
+            <button id="restart-bot" class="btn btn-warning" style="margin-left:8px"><span class="material-icons">refresh</span> Reiniciar Instância</button>
+            <button id="stop-bot" class="btn btn-danger" style="margin-left:8px"><span class="material-icons">stop</span> Parar Instância</button>
+            <button id="load-groups" class="btn btn-secondary" style="margin-left:8px"><span class="material-icons">refresh</span> Carregar Contatos</button>
             <a href="qrcode.html" class="btn btn-info" style="margin-left:8px"><span class="material-icons">qr_code</span> QR Code</a>
           </div>
         </div>
 
-        <!-- Status do Bot -->
+        <!-- Status da API -->
         <div class="bot-status" id="bot-status">
           <div class="status-item">
-            <span class="status-label">Status do Bot:</span>
+            <span class="status-label">Status da API:</span>
             <span class="status-value" id="bot-status-text">Verificando...</span>
             <span class="status-indicator" id="bot-status-indicator"></span>
           </div>
@@ -49,7 +49,7 @@
         <!-- Área que exibirá a lista de contatos/carregados do WhatsApp -->
         <div class="groups-list" aria-live="polite">
           <h2>Contatos e Grupos do WhatsApp</h2>
-          <p class="muted">Primeiro inicialize o bot, depois clique em "Carregar Grupos" para buscar contatos e grupos do WhatsApp Web.</p>
+          <p class="muted">Primeiro inicialize uma instância, depois clique em "Carregar Contatos". Nota: APIs de WhatsApp geralmente não fornecem listas de contatos por questões de privacidade.</p>
 
           <div class="group-search-wrapper">
             <input id="group-search" class="group-search" type="search" placeholder="Pesquisar contatos ou grupos..." aria-label="Pesquisar contatos" />
