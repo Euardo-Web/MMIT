@@ -1,55 +1,8 @@
-// Client helper to call backend API and poll job status
-async function sendMessage(form) {
-  const mensagem = document.getElementById('mensagem').value.trim();
-  const grupos = document.getElementById('grupos').value
-    .split('\n')
-    .map(s => s.trim())
-    .filter(Boolean);
-
-  if (!mensagem || grupos.length === 0) {
-    alert('Preencha os campos: grupos (uma por linha) e mensagem');
-    return;
-  }
-
-  const res = await fetch('/api/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contacts: grupos, message: mensagem })
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    alert('Erro: ' + (err.error || res.statusText));
-    return;
-  }
-
-  const { job_id } = await res.json();
-  document.getElementById('job-status').textContent = 'Enviado, job: ' + job_id;
-
-  // poll job status
-  const interval = setInterval(async () => {
-    const r = await fetch('/api/job/' + job_id);
-    if (!r.ok) return;
-    const j = await r.json();
-    document.getElementById('job-status').textContent = 'Status: ' + j.status;
-    if (j.status === 'finished' || j.status === 'failed') {
-      clearInterval(interval);
-    }
-  }, 2000);
-}
+// Script.js simplificado - Apenas gerenciamento de instâncias via Z-API
 
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('send-form');
-  if (form) {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      sendMessage(form);
-    });
-  }
-  
-  // Instances management (instancias.html)
+  // ========== GERENCIAMENTO DE INSTÂNCIAS ==========
   const instancesUl = document.getElementById('instances-ul');
-  const newBtn = document.getElementById('new-instance');
   const instForm = document.getElementById('instance-form');
   const instIdInput = document.getElementById('inst-id');
   const instName = document.getElementById('inst-name');
@@ -93,15 +46,18 @@ document.addEventListener('DOMContentLoaded', () => {
     list.forEach(inst => {
       const li = document.createElement('li');
       li.className = 'instance-item';
-      const idsText = inst.ids && inst.ids.length > 0 ? ` (${inst.ids.length} IDs)` : ' (0 IDs)';
+      const idsText = inst.contacts && inst.contacts.length > 0 ? ` (${inst.contacts.length} contatos)` : ' (0 contatos)';
       const providerText = inst.provider ? `Provider: ${escapeHtml(inst.provider)}` : '';
       const zapiText = inst.zapi_instance_id ? `<div class="muted">Z-API ID: ${escapeHtml(inst.zapi_instance_id)}</div>` : '';
+      const statusText = inst.status ? `<div class="status-badge ${inst.status}">${inst.status}</div>` : '';
+      
       li.innerHTML = `
         <div class="instance-info">
           <strong>${escapeHtml(inst.name)}</strong>${idsText}
           <small>Criado: ${formatDate(inst.created_at)}</small>
           <div class="muted">${providerText}</div>
           ${zapiText}
+          ${statusText}
         </div>
         <div class="instance-actions">
           <button data-id="${inst.id}" class="btn btn-secondary open-instance">
@@ -115,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
       instancesUl.appendChild(li);
     });
 
-    // wire open buttons
+    // Wire open buttons
     document.querySelectorAll('.open-instance').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const id = btn.dataset.id;
@@ -130,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // wire delete buttons
+    // Wire delete buttons
     document.querySelectorAll('.delete-instance').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const id = btn.dataset.id;
@@ -153,13 +109,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!instForm) return;
     instIdInput.value = inst.id || '';
     instName.value = inst.name || '';
-    instId1.value = (inst.contacts && inst.contacts[0]) || '';
-    instId2.value = (inst.contacts && inst.contacts[1]) || '';
-    instId3.value = (inst.contacts && inst.contacts[2]) || '';
+    
+    // Preencher contatos nos campos (se existir os elementos)
+    if (instId1 && instId2 && instId3) {
+      instId1.value = (inst.contacts && inst.contacts[0]) || '';
+      instId2.value = (inst.contacts && inst.contacts[1]) || '';
+      instId3.value = (inst.contacts && inst.contacts[2]) || '';
+    }
+    
     instMensagem.value = inst.message || '';
-    // set provider and zapi id if available
-    if (instProvider) instProvider.value = inst.provider || 'selenium';
+    
+    // Set provider and zapi id if available
+    if (instProvider) instProvider.value = inst.provider || 'zapi';
     if (instZapiId) instZapiId.value = inst.zapi_instance_id || '';
+    
     formTitle.textContent = 'Editar Instância';
   }
 
@@ -167,13 +130,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!instForm) return;
     instIdInput.value = '';
     instName.value = '';
-    instId1.value = '';
-    instId2.value = '';
-    instId3.value = '';
+    
+    if (instId1 && instId2 && instId3) {
+      instId1.value = '';
+      instId2.value = '';
+      instId3.value = '';
+    }
+    
     instMensagem.value = '';
     formTitle.textContent = 'Criar Instância';
   }
 
+  // Event listeners
+  const newBtn = document.getElementById('new-instance');
   if (newBtn) {
     newBtn.addEventListener('click', (e) => {
       clearForm();
@@ -191,14 +160,26 @@ document.addEventListener('DOMContentLoaded', () => {
     instForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const id = instIdInput.value.trim();
+      
+      let contacts = [];
+      if (instId1 && instId2 && instId3) {
+        contacts = [instId1.value.trim(), instId2.value.trim(), instId3.value.trim()].filter(Boolean);
+      } else {
+        // Fallback: usar um placeholder se não houver campos de contato
+        contacts = ['placeholder'];
+      }
+      
       const payload = {
         name: instName.value.trim(),
-        contacts: [instId1.value.trim(), instId2.value.trim(), instId3.value.trim()].filter(Boolean),
-        message: instMensagem.value.trim()
+        contacts: contacts,
+        message: instMensagem.value.trim() || 'Mensagem padrão'
       };
-      if (instProvider && instProvider.value) payload.provider = instProvider.value;
       
-      // Client-side validations
+      if (instProvider && instProvider.value) {
+        payload.provider = instProvider.value;
+      }
+      
+      // Validations
       if (!payload.name) {
         showNotification('Nome da instância é obrigatório', 'error');
         instName.focus();
@@ -213,15 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showNotification('Mensagem deve ter no máximo 1000 caracteres', 'error');
         instMensagem.focus();
         return;
-      }
-      
-      // Validate contacts length
-      for (let i = 0; i < payload.contacts.length; i++) {
-        if (payload.contacts[i].length > 50) {
-          showNotification(`Contato ${i + 1} deve ter no máximo 50 caracteres`, 'error');
-          [instId1, instId2, instId3][i].focus();
-          return;
-        }
       }
 
       try {
@@ -253,31 +225,24 @@ document.addEventListener('DOMContentLoaded', () => {
         clearForm();
       } catch (error) {
         console.error('Error saving instance:', error);
-        let errorMessage = 'Erro ao salvar instância';
-        
-        if (error.message.includes('HTTP 400') || error.message.includes('HTTP 500')) {
-          errorMessage = error.message.replace(/^HTTP \d+: /, '');
-        } else if (error.message.includes('Failed to fetch')) {
-          errorMessage = 'Erro de conexão. Verifique sua internet.';
-        } else {
-          errorMessage = error.message || errorMessage;
-        }
-        
-        showNotification(errorMessage, 'error');
+        showNotification(error.message || 'Erro ao salvar instância', 'error');
       }
     });
   }
 
-  // helper functions
+  // Helper functions
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+    return String(s).replace(/[&<>"']/g, function (c) { 
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; 
+    });
   }
 
   function formatDate(dateString) {
     if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      return date.toLocaleDateString('pt-BR') + ' ' + 
+             date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     } catch {
       return 'Data inválida';
     }
@@ -291,11 +256,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showNotification(message, type = 'info') {
-    // Remove existing notifications
     const existing = document.querySelector('.notification');
     if (existing) existing.remove();
 
-    // Create notification element
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.innerHTML = `
@@ -306,23 +269,20 @@ document.addEventListener('DOMContentLoaded', () => {
       </button>
     `;
 
-    // Add to page
     document.body.appendChild(notification);
 
-    // Auto remove after 5 seconds
     setTimeout(() => {
       if (notification.parentNode) {
         notification.remove();
       }
     }, 5000);
 
-    // Close button functionality
     notification.querySelector('.notification-close').addEventListener('click', () => {
       notification.remove();
     });
   }
 
-  // Add refresh functionality
+  // Refresh button
   const refreshBtn = document.querySelector('.btn-secondary');
   if (refreshBtn && refreshBtn.textContent.includes('Atualizar')) {
     refreshBtn.addEventListener('click', async () => {
@@ -341,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Add functionality to the "Nova Instância" button in header
+  // Header new instance button
   const headerNewBtn = document.querySelector('.actions .btn-primary');
   if (headerNewBtn && headerNewBtn.textContent.includes('Nova Instância')) {
     headerNewBtn.addEventListener('click', () => {
@@ -350,256 +310,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // initial load for instances list
-  loadInstances();
-
-  // Bot management (grupos.html)
-  const initBotBtn = document.getElementById('init-bot');
-  const restartBotBtn = document.getElementById('restart-bot');
-  const stopBotBtn = document.getElementById('stop-bot');
-  const loadGroupsBtn = document.getElementById('load-groups');
-  const botStatusText = document.getElementById('bot-status-text');
-  const botStatusIndicator = document.getElementById('bot-status-indicator');
-
-  // Check bot status
-  async function checkBotStatus() {
-    try {
-      const res = await fetch('/api/health');
-      if (res.ok) {
-        const data = await res.json();
-        updateBotStatus(data.bot_status);
-      }
-    } catch (error) {
-      updateBotStatus('error');
-    }
-  }
-
-  // Update bot status display
-  function updateBotStatus(status) {
-    if (!botStatusText || !botStatusIndicator) return;
-    
-    const statusMap = {
-      'not_started': { text: 'Não Iniciado', class: 'offline', color: '#f44336' },
-      'initializing': { text: 'Inicializando...', class: 'pending', color: '#ff9800' },
-      'connected': { text: 'Conectado', class: 'online', color: '#4caf50' },
-      'disconnected': { text: 'Desconectado', class: 'offline', color: '#f44336' },
-      'error': { text: 'Erro', class: 'error', color: '#f44336' }
-    };
-    
-    const statusInfo = statusMap[status] || statusMap['error'];
-    botStatusText.textContent = statusInfo.text;
-    botStatusIndicator.className = `status-indicator ${statusInfo.class}`;
-    botStatusIndicator.style.backgroundColor = statusInfo.color;
-  }
-
-  // Initialize bot
-  async function initBot() {
-    try {
-      initBotBtn.disabled = true;
-      initBotBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Inicializando...';
-      updateBotStatus('initializing');
-      
-      const res = await fetch('/api/bot/start', { method: 'POST' });
-      const data = await res.json();
-      
-      if (res.ok) {
-        showNotification(data.message, 'success');
-        updateBotStatus(data.bot_status);
-        
-        // Check status periodically
-        setTimeout(checkBotStatus, 2000);
-        setTimeout(checkBotStatus, 5000);
-        setTimeout(checkBotStatus, 10000);
-      } else {
-        showNotification('Erro: ' + data.message, 'error');
-        updateBotStatus('error');
-      }
-    } catch (error) {
-      console.error('Erro ao inicializar bot:', error);
-      showNotification('Erro ao inicializar bot: ' + error.message, 'error');
-      updateBotStatus('error');
-    } finally {
-      if (initBotBtn) {
-        initBotBtn.disabled = false;
-        initBotBtn.innerHTML = '<span class="material-icons">smart_toy</span> Inicializar Bot';
-      }
-    }
-  }
-
-  // Restart bot
-  async function restartBot() {
-    try {
-      restartBotBtn.disabled = true;
-      restartBotBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Reiniciando...';
-      updateBotStatus('initializing');
-      
-      const res = await fetch('/api/bot/restart', { method: 'POST' });
-      const data = await res.json();
-      
-      if (res.ok) {
-        showNotification(data.message, 'success');
-        updateBotStatus(data.bot_status);
-        
-        // Check status periodically
-        setTimeout(checkBotStatus, 2000);
-        setTimeout(checkBotStatus, 5000);
-        setTimeout(checkBotStatus, 10000);
-      } else {
-        showNotification('Erro: ' + data.message, 'error');
-        updateBotStatus('error');
-      }
-    } catch (error) {
-      console.error('Erro ao reiniciar bot:', error);
-      showNotification('Erro ao reiniciar bot: ' + error.message, 'error');
-      updateBotStatus('error');
-    } finally {
-      if (restartBotBtn) {
-        restartBotBtn.disabled = false;
-        restartBotBtn.innerHTML = '<span class="material-icons">refresh</span> Reiniciar Bot';
-      }
-    }
-  }
-
-  // Stop bot
-  async function stopBot() {
-    try {
-      stopBotBtn.disabled = true;
-      stopBotBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Parando...';
-      
-      const res = await fetch('/api/bot/stop', { method: 'POST' });
-      const data = await res.json();
-      
-      if (res.ok) {
-        showNotification(data.message, 'success');
-        updateBotStatus('not_started');
-      } else {
-        showNotification('Erro: ' + data.message, 'error');
-      }
-    } catch (error) {
-      console.error('Erro ao parar bot:', error);
-      showNotification('Erro ao parar bot: ' + error.message, 'error');
-    } finally {
-      if (stopBotBtn) {
-        stopBotBtn.disabled = false;
-        stopBotBtn.innerHTML = '<span class="material-icons">stop</span> Parar Bot';
-      }
-    }
-  }
-
-  // Groups loading (grupos.html)
-  async function loadGroups() {
-    try {
-      loadGroupsBtn.disabled = true;
-      loadGroupsBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Carregando...';
-      const res = await fetch('/api/contacts');
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${res.status}: ${res.statusText}`);
-      }
-      const data = await res.json();
-      renderContactsList(data.contacts || []);
-      showNotification('Grupos carregados', 'success');
-    } catch (err) {
-      console.error('Erro ao carregar grupos:', err);
-      showNotification('Erro ao carregar grupos: ' + (err.message || err), 'error');
-    } finally {
-      if (loadGroupsBtn) {
-        loadGroupsBtn.disabled = false;
-        loadGroupsBtn.innerHTML = '<span class="material-icons">refresh</span> Carregar Grupos';
-      }
-    }
-  }
-
-  // Contacts rendering with search/filter
-  const groupsScroll = document.getElementById('groups-scroll');
-  const groupSearch = document.getElementById('group-search');
-  const clearSearch = document.getElementById('clear-search');
-
-  let contactsCache = [];
-
-  function renderContactsList(contacts) {
-    contactsCache = contacts || [];
-    const container = document.getElementById('groups-scroll');
-    if (!container) return;
-    container.innerHTML = '';
-
-    if (!contactsCache || contactsCache.length === 0) {
-      const p = document.createElement('p');
-      p.className = 'muted';
-      p.id = 'groups-empty';
-      p.textContent = 'Nenhum grupo/contato encontrado no WhatsApp Web.';
-      container.appendChild(p);
-      return;
-    }
-
-    const ul = document.createElement('ul');
-    ul.className = 'groups-ul';
-
-    contactsCache.forEach(name => {
-      const li = document.createElement('li');
-      li.className = 'group-item';
-      li.textContent = name;
-      li.title = 'Clique para adicionar ao campo de grupos';
-      li.addEventListener('click', () => {
-        if (gruposTextarea) {
-          const current = gruposTextarea.value.split('\n').map(s => s.trim()).filter(Boolean);
-          if (!current.includes(name)) current.push(name);
-          gruposTextarea.value = current.join('\n');
-        }
-      });
-      ul.appendChild(li);
-    });
-
-    container.appendChild(ul);
-  }
-
-  function filterContacts(query) {
-    const q = (query || '').toLowerCase().trim();
-    if (!q) {
-      renderContactsList(contactsCache);
-      return;
-    }
-    const filtered = contactsCache.filter(c => (c || '').toLowerCase().includes(q));
-    renderContactsList(filtered);
-  }
-
-  if (groupSearch) {
-    groupSearch.addEventListener('input', (e) => {
-      filterContacts(e.target.value);
-    });
-  }
-
-  if (clearSearch) {
-    clearSearch.addEventListener('click', () => {
-      if (groupSearch) groupSearch.value = '';
-      filterContacts('');
-      if (groupSearch) groupSearch.focus();
-    });
-  }
-
-  // Event listeners for bot management
-  if (initBotBtn) {
-    initBotBtn.addEventListener('click', initBot);
-  }
-  
-  if (restartBotBtn) {
-    restartBotBtn.addEventListener('click', restartBot);
-  }
-  
-  if (stopBotBtn) {
-    stopBotBtn.addEventListener('click', stopBot);
-  }
-  
-  if (loadGroupsBtn) {
-    loadGroupsBtn.addEventListener('click', (e) => {
-      loadGroups();
-    });
-  }
-
-  // Check bot status on page load
-  if (botStatusText) {
-    checkBotStatus();
-    // Check status every 10 seconds
-    setInterval(checkBotStatus, 10000);
+  // Initial load
+  if (instancesUl) {
+    loadInstances();
   }
 });
