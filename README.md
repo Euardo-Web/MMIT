@@ -1,206 +1,248 @@
-# WhatsApp Bot - Node.js Version
+# Thunder - Sistema de Gerenciamento WhatsApp via Z-API
 
-Aplicação de automação para WhatsApp Web **100% migrada** de Python para Node.js.
+Sistema completo para gerenciamento de instâncias WhatsApp através da API Z-API.
 
-## 🎉 Migração Completa!
+## 🚀 Características
 
-✅ **Todos os arquivos Python removidos**  
-✅ **Backend totalmente em Node.js**  
-✅ **Banco SQLite mantido**  
-✅ **Interface web preservada**  
-✅ **Funcionalidades idênticas**
-
-## 🚀 Funcionalidades
-
-- ✅ Bot WhatsApp Web automatizado
-- ✅ Interface web moderna
+- ✅ Gerenciamento de múltiplas instâncias WhatsApp
+- ✅ Integração completa com Z-API
+- ✅ Interface web moderna e responsiva
 - ✅ Envio de mensagens em massa
-- ✅ Gerenciamento de instâncias
-- ✅ Banco de dados SQLite
-- ✅ API REST completa
+- ✅ QR Code para conexão
+- ✅ Status em tempo real
+- ✅ Webhooks para eventos
+- ✅ API RESTful completa
 
 ## 📋 Pré-requisitos
 
-- Node.js >= 16.0.0
-- npm ou yarn
-- Google Chrome instalado
-- WhatsApp Web configurado
+- Node.js 16+ 
+- Conta na Z-API (https://z-api.io)
+- Token e credenciais da Z-API
 
-## 🛠️ Instalação
+## 🔧 Instalação
 
-1. **Clone ou baixe o projeto**
-2. **Instale as dependências:**
-   ```bash
-   npm install
-   ```
-
-3. **Execute a aplicação:**
-   ```bash
-   npm start
-   ```
-
-4. **Para desenvolvimento (com auto-reload):**
-   ```bash
-   npm run dev
-   ```
-
-## 🌐 Acesso
-
-Após iniciar, acesse: `http://localhost:3000`
-
-## 📁 Estrutura do Projeto
-
-```
-├── server.js              # Servidor Express.js principal
-├── whatsapp-bot.js        # Classe do bot WhatsApp
-├── package.json           # Dependências e scripts npm
-├── app_new.db            # Banco de dados SQLite (mantido)
-├── dashboard.html         # Interface principal
-├── grupos.html           # Página de grupos com bot
-├── instancias.html       # Página de instâncias
-├── style.css             # Estilos CSS
-├── script.js             # JavaScript do frontend
-├── diagnose.js           # Script de diagnóstico
-├── test-bot.js           # Script de teste do bot
-├── start.bat             # Script de inicialização (Windows)
-├── start.sh              # Script de inicialização (Linux/Mac)
-└── README.md             # Este arquivo
+1. Clone o repositório:
+```bash
+git clone <seu-repositorio>
+cd <diretorio>
 ```
 
-## 🔧 Configuração
-
-### Primeira Execução
-
-1. Execute `npm start`
-2. Abra o navegador em `http://localhost:5000`
-3. O Chrome abrirá automaticamente o WhatsApp Web
-4. Escaneie o QR Code com seu celular
-5. Aguarde o login ser confirmado
-
-### Configurações Avançadas
-
-Você pode modificar as configurações no arquivo `server.js`:
-
-- **Porta:** Altere `PORT` (padrão: 3000)
-- **Modo Headless:** Altere `headless = true` no WhatsAppBot
-- **Timeout:** Altere `waitTimeout` no WhatsAppBot
-
-## 📡 API Endpoints
-
-### Health Check
-```
-GET /api/health
+2. Instale as dependências:
+```bash
+npm install
 ```
 
-### Contatos
-```
-GET /api/contacts
+3. Configure as variáveis de ambiente:
+```bash
+cp .env.example .env
 ```
 
-### Enviar Mensagens
+Edite o arquivo `.env` com suas credenciais:
+```env
+PORT=3000
+ZAPI_BASE_URL=https://api.z-api.io
+ZAPI_TOKEN=seu_token_aqui
+NODE_ENV=production
 ```
-POST /api/send
+
+4. Inicie o servidor:
+```bash
+npm start
+```
+
+Ou em modo de desenvolvimento:
+```bash
+npm run dev
+```
+
+5. Acesse o sistema:
+```
+http://localhost:3000
+```
+
+## 📚 Estrutura da API
+
+### Instâncias
+
+#### Criar Instância
+```http
+POST /api/instances
 Content-Type: application/json
 
 {
-  "contacts": ["Nome1", "Nome2"],
-  "message": "Sua mensagem aqui"
+  "name": "Minha Instância",
+  "contacts": ["contato1", "contato2"],
+  "message": "Mensagem padrão",
+  "provider": "zapi"
 }
 ```
 
-### Jobs (Status de Envio)
-```
-GET /api/job/:jobId
-```
-
-### Instâncias
-```
+#### Listar Instâncias
+```http
 GET /api/instances
-POST /api/instances
-DELETE /api/instances/:id
 ```
 
-## � Integração com Z-API (opcional)
-
-Se você quer que cada "instância" do seu site controle uma instância na plataforma Z-API (em vez de usar Selenium local), siga estas orientações.
-
-Campos recomendados para a tabela `instances` no seu banco (adicionar colunas):
-
-- `zapi_instance_id` TEXT NULL — identificador da instância na Z-API
-- `zapi_token` TEXT NULL — token específico da instância (se aplicável)
-- `webhook_url` TEXT NULL — URL para onde a Z-API enviará eventos
-- `provider` TEXT NULL — exemplo: 'selenium' ou 'zapi'
-
-Exemplo de migração SQL (SQLite):
-```sql
-ALTER TABLE instances ADD COLUMN zapi_instance_id TEXT;
-ALTER TABLE instances ADD COLUMN zapi_token TEXT;
-ALTER TABLE instances ADD COLUMN webhook_url TEXT;
-ALTER TABLE instances ADD COLUMN provider TEXT DEFAULT 'selenium';
+#### Obter Instância Específica
+```http
+GET /api/instances/:instanceId
 ```
 
-Fluxo sugerido de integração:
-1. Usuário cria instância no seu site (POST /api/instances)
-2. Se `provider` == 'zapi', o backend chama `zapi-adapter.createInstance()` e salva `zapi_instance_id` + `zapi_token`
-3. Para mostrar QR/estado, o backend chama `zapi-adapter.getQRCode()` ou `zapi-adapter.getStatus()` e serve para o frontend
-4. Para enviar mensagens, o backend chama `zapi-adapter.sendMessage(zapi_instance_id, payload)`
-5. Webhooks: configure `webhook_url` (no Z-API) apontando para um endpoint seu, ex: `/api/zapi/webhook` para receber eventos e atualizar o estado da instância
+#### Atualizar Instância
+```http
+PUT /api/instances/:instanceId
+Content-Type: application/json
 
-Segurança e operações:
-- Use HTTPS e verifique assinatura HMAC dos webhooks
-- Trate tokens como segredos e armazene criptografados se necessário
-- Monitore uso e erros (limites e bloqueios do WhatsApp)
+{
+  "name": "Nome Atualizado",
+  "contacts": ["contato1"],
+  "message": "Nova mensagem"
+}
+```
 
-Arquivo utilitário incluído: `zapi-adapter.js` — adaptador genérico para chamadas à Z-API. Ajuste `ZAPI_BASE_URL` e `ZAPI_TOKEN` via variáveis de ambiente.
+#### Deletar Instância
+```http
+DELETE /api/instances/:instanceId
+```
 
+### Gerenciamento Z-API
 
-## �🚨 Solução de Problemas
+#### Iniciar Instância
+```http
+POST /api/instances/:instanceId/start
+```
 
-### Chrome não abre
-- Verifique se o Google Chrome está instalado
-- Execute: `npm install chromedriver`
+#### Parar Instância
+```http
+POST /api/instances/:instanceId/stop
+```
 
-### Bot não conecta
-- Verifique se o WhatsApp Web está funcionando no navegador
-- Aguarde o QR Code aparecer e escaneie com o celular
-- Verifique se não há outras sessões ativas do WhatsApp Web
+#### Obter QR Code
+```http
+GET /api/instances/:instanceId/qr
+```
 
-### Erro de permissão
-- Execute como administrador (Windows)
-- Verifique as permissões de arquivo
+#### Verificar Status
+```http
+GET /api/instances/:instanceId/status
+```
 
-## 🔄 Migração do Python
+#### Enviar Mensagem
+```http
+POST /api/instances/:instanceId/send
+Content-Type: application/json
 
-Esta versão foi migrada da versão Python mantendo:
-- ✅ Mesma funcionalidade
-- ✅ Mesmo banco de dados SQLite
-- ✅ Mesma interface web
-- ✅ Mesmas rotas da API
+{
+  "to": "5511999999999",
+  "message": "Olá, mundo!"
+}
+```
 
-### Principais mudanças:
-- Flask → Express.js
-- Python Selenium → Node.js Selenium
-- Python threading → Node.js async/await
-- Mesma lógica de negócio
+### Webhooks
 
-## 📝 Logs
+O sistema possui um endpoint para receber webhooks da Z-API:
 
-Os logs são exibidos no console onde você executou `npm start`.
+```http
+POST /api/zapi/webhook
+```
 
-## 🛑 Parar a Aplicação
+Configure este endpoint na sua conta Z-API para receber eventos em tempo real.
 
-Use `Ctrl+C` no terminal para parar o servidor graciosamente.
+## 🎯 Como Usar
 
-## 📞 Suporte
+### 1. Criar uma Instância
 
-Para problemas ou dúvidas, verifique:
-1. Logs no console
-2. Status da API em `/api/health`
-3. Se o Chrome está funcionando
-4. Se o WhatsApp Web está logado
+1. Acesse a página "Instâncias"
+2. Clique em "Nova Instância"
+3. Preencha o nome e informações
+4. Clique em "Salvar"
+
+### 2. Conectar ao WhatsApp
+
+1. Na lista de instâncias, clique em "Iniciar" (▶️)
+2. Clique em "QR Code" (QR)
+3. Escaneie o QR Code com seu WhatsApp
+4. Aguarde a conexão
+
+### 3. Enviar Mensagens
+
+1. Acesse a página "Enviar Mensagens"
+2. Selecione a instância conectada
+3. Digite o número do destinatário (com DDI)
+4. Digite a mensagem
+5. Clique em "Enviar"
+
+## 🗂️ Estrutura do Projeto
+
+```
+├── server.js              # Servidor principal
+├── zapi-adapter.js        # Adaptador Z-API
+├── package.json           # Dependências
+├── dashboard.html         # Dashboard principal
+├── instancias.html        # Gerenciamento de instâncias
+├── grupos.html            # Envio de mensagens
+├── script.js              # JavaScript do frontend
+├── style.css              # Estilos
+├── nav-component.js       # Componente de navegação
+└── app_new.db            # Banco de dados SQLite
+```
+
+## 🔐 Segurança
+
+- **NÃO** commite o arquivo `.env` com credenciais
+- Use HTTPS em produção
+- Configure CORS adequadamente
+- Implemente autenticação se necessário
+
+## 🐛 Troubleshooting
+
+### Erro ao conectar com Z-API
+- Verifique suas credenciais no `.env`
+- Confirme que o ZAPI_BASE_URL está correto
+- Verifique se sua conta Z-API está ativa
+
+### Instância não conecta
+- Certifique-se de iniciar a instância antes de obter o QR
+- Verifique se o número já não está conectado em outro lugar
+- Aguarde alguns segundos entre tentativas
+
+### Mensagens não são enviadas
+- Verifique se a instância está conectada
+- Confirme o formato do número (com DDI)
+- Verifique os logs do servidor
+
+## 📊 Banco de Dados
+
+O sistema usa SQLite com as seguintes tabelas:
+
+- `instances`: Armazena informações das instâncias
+- `zapi_mappings`: Mapeia instâncias locais com Z-API
+
+## 🚀 Deploy
+
+### Render.com, Heroku, etc.
+
+1. Configure as variáveis de ambiente na plataforma
+2. Faça push do código
+3. A plataforma irá instalar dependências e iniciar automaticamente
+
+## 📝 Licença
+
+MIT
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas! Por favor:
+
+1. Fork o projeto
+2. Crie uma branch (`git checkout -b feature/nova-funcionalidade`)
+3. Commit suas mudanças (`git commit -am 'Adiciona nova funcionalidade'`)
+4. Push para a branch (`git push origin feature/nova-funcionalidade`)
+5. Abra um Pull Request
+
+## 📧 Suporte
+
+Para suporte, abra uma issue no repositório ou entre em contato.
 
 ---
 
-**Versão:** 2.0.0 (Node.js)  
-**Migrado de:** Python/Flask  
-**Banco:** SQLite (mantido)
+Desenvolvido com ❤️ para facilitar o gerenciamento de WhatsApp via API
