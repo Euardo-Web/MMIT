@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thunder - Fila de Mensagens</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="thunder.png">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="nav-component.js" defer></script>
+    <style>
+        .queue-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .stat-card .stat-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .stat-card .stat-header .material-icons {
+            font-size: 18px;
+        }
+
+        .stat-card .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--heading-color);
+        }
+
+        .stat-card .stat-description {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .stat-card.pending .stat-header .material-icons { color: #ffc107; }
+        .stat-card.failed .stat-header .material-icons { color: #dc3545; }
+        .stat-card.total .stat-header .material-icons { color: #28a745; }
+        .stat-card.rate .stat-header .material-icons { color: #007bff; }
+
+        .queue-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        .queue-actions button {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-card {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .chart-header {
+            padding: 15px 20px;
+            background-color: #f7f9fc;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            color: var(--heading-color);
+        }
+
+        .chart-body {
+            padding: 30px;
+        }
+
+        .chart-placeholder {
+            width: 100%;
+            height: 200px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed #dee2e6;
+        }
+
+        .chart-placeholder-text {
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        .instances-table {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .instances-table .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        .data-table-content {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table-content thead {
+            background-color: #f8f9fa;
+        }
+
+        .data-table-content th {
+            padding: 12px 20px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .data-table-content td {
+            padding: 16px 20px;
+            font-size: 14px;
+            color: #666;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .data-table-content tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state .material-icons {
+            font-size: 64px;
+            color: #dee2e6;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav-bar></nav-bar>
+
+        <main class="main-content">
+            <header class="header">
+                <div class="user-status">
+                    <span>Sistema Online</span>
+                    <span class="status-indicator online"></span>
+                </div>
+            </header>
+
+            <section class="content-body">
+                <div class="content-header">
+                    <div>
+                        <h1>Fila de Mensagens</h1>
+                        <p>Monitore e gerencie a fila de mensagens pendentes</p>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-secondary">
+                            <span class="material-icons">refresh</span> Atualizar
+                        </button>
+                        <button class="btn btn-primary">
+                            <span class="material-icons">play_arrow</span> Testar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="queue-stats">
+                    <div class="stat-card pending">
+                        <div class="stat-header">
+                            <span class="material-icons">schedule</span>
+                            <span>Pendentes</span>
+                        </div>
+                        <div class="stat-value">0</div>
+                        <div class="stat-description">mensagens aguardando envio</div>
+                    </div>
+
+                    <div class="stat-card failed">
+                        <div class="stat-header">
+                            <span class="material-icons">error_outline</span>
+                            <span>Falhadas</span>
+                        </div>
+                        <div class="stat-value">0</div>
+                        <div class="stat-description">mensagens que falharam</div>
+                    </div>
+
+                    <div class="stat-card total">
+                        <div class="stat-header">
+                            <span class="material-icons">check_circle</span>
+                            <span>Total</span>
+                        </div>
+                        <div class="stat-value">0</div>
+                        <div class="stat-description">mensagens na fila</div>
+                    </div>
+
+                    <div class="stat-card rate">
+                        <div class="stat-header">
+                            <span class="material-icons">speed</span>
+                            <span>Rate Limit</span>
+                        </div>
+                        <div class="stat-value">2</div>
+                        <div class="stat-description">mensagens por instância</div>
+                    </div>
+                </div>
+
+                <div class="queue-actions">
+                    <button class="btn btn-secondary">
+                        <span class="material-icons">play_arrow</span>
+                        Processar Fila
+                    </button>
+                    <button class="btn btn-secondary">
+                        <span class="material-icons">replay</span>
+                        Processar falhadas
+                    </button>
+                    <button class="btn btn-secondary">
+                        <span class="material-icons">delete_sweep</span>
+                        Limpar Pendentes
+                    </button>
+                    <button class="btn btn-danger">
+                        <span class="material-icons">clear</span>
+                        Limpar Todos
+                    </button>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <div class="chart-header">Status da Fila</div>
+                        <div class="chart-body">
+                            <div class="chart-placeholder">
+                                <div class="chart-placeholder-text">Gráfico de Status da Fila</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-header">Carga das Instâncias</div>
+                        <div class="chart-body">
+                            <div class="table-container">
+                                <table class="data-table-content">
+                                    <thead>
+                                        <tr>
+                                            <th>Instância</th>
+                                            <th>MsgsMín</th>
+                                            <th>Disponível</th>
+                                            <th>Total Enviado</th>
+                                            <th>Erros</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="5" class="empty-state">
+                                                <div>
+                                                    <span class="material-icons">inbox</span>
+                                                    <div>No rows</div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

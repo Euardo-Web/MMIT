@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thunder - Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="thunder.png">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="nav-component.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <nav-bar></nav-bar>
+
+        <main class="main-content">
+            <header class="header">
+                <div class="user-status">
+                    <span>Usuário Online</span>
+                    <span class="status-indicator online"></span>
+                </div>
+            </header>
+            <section class="content-body">
+                <div class="content-header">
+                    <div>
+                        <h1>Dashboard</h1>
+                        <p>Visão geral do sistema de automação</p>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-secondary"><span class="material-icons">refresh</span> Atualizar</button>
+                    </div>
+                </div>
+
+                <div class="dashboard-cards">
+                    <div class="card">
+                        <span class="material-icons icon">groups</span>
+                        <h3>Total de Grupos</h3>
+                        <p class="count">0</p>
+                    </div>
+                    <div class="card">
+                        <span class="material-icons icon">dns</span>
+                        <h3>Instâncias Ativas</h3>
+                        <p class="count">0</p>
+                    </div>
+                    <div class="card">
+                        <span class="material-icons icon">message</span>
+                        <h3>Mensagens na Fila</h3>
+                        <p class="count">0</p>
+                    </div>
+                </div>
+
+                <div class="data-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Atividade Recente</th>
+                                <th>Tipo</th>
+                                <th>Status</th>
+                                <th>Data/Hora</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="4" class="no-data">Nenhuma atividade recente</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

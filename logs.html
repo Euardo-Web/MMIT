@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thunder - Logs</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="thunder.png">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="nav-component.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <nav-bar></nav-bar>
+
+        <main class="main-content">
+            <header class="header">
+                <div class="user-status">
+                    <span>Usuário Online</span>
+                    <span class="status-indicator online"></span>
+                </div>
+            </header>
+            <section class="content-body">
+                <div class="content-header">
+                    <div>
+                        <h1>Logs do Sistema</h1>
+                        <p>Visualize e monitore os logs de atividade do sistema</p>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-secondary"><span class="material-icons">refresh</span> Atualizar</button>
+                        <button class="btn btn-secondary"><span class="material-icons">clear_all</span> Limpar</button>
+                        <button class="btn btn-primary"><span class="material-icons">download</span> Exportar</button>
+                    </div>
+                </div>
+
+                <div class="dashboard-cards">
+                    <div class="card">
+                        <span class="material-icons icon" style="color: #28a745;">info</span>
+                        <h3>Logs de Hoje</h3>
+                        <p class="count">0</p>
+                    </div>
+                    <div class="card">
+                        <span class="material-icons icon" style="color: #dc3545;">error</span>
+                        <h3>Erros</h3>
+                        <p class="count">0</p>
+                    </div>
+                    <div class="card">
+                        <span class="material-icons icon" style="color: #ffc107;">warning</span>
+                        <h3>Avisos</h3>
+                        <p class="count">0</p>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <select style="border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; font-size: 14px;">
+                            <option>Todos os Níveis</option>
+                            <option>Info</option>
+                            <option>Warning</option>
+                            <option>Error</option>
+                        </select>
+                        <select style="border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; font-size: 14px;">
+                            <option>Última Hora</option>
+                            <option>Últimas 6 Horas</option>
+                            <option>Hoje</option>
+                            <option>Últimos 7 Dias</option>
+                        </select>
+                        <input type="text" placeholder="Filtrar logs..." style="border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; font-size: 14px; flex: 1; min-width: 200px;">
+                    </div>
+                </div>
+
+                <div class="data-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data/Hora</th>
+                                <th>Nível</th>
+                                <th>Origem</th>
+                                <th>Mensagem</th>
+                                <th>Detalhes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" class="no-data">Nenhum log encontrado</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="table-pagination">
+                        <span>Rows per page:</span>
+                        <select>
+                            <option>10</option>
+                            <option>25</option>
+                            <option>50</option>
+                        </select>
+                        <span>0-0 of 0</span>
+                        <button class="pagination-btn"><</button>
+                        <button class="pagination-btn">></button>
+                    </div>
+                </div>

@@ -1,0 +1,33 @@
+node_modules/
+npm-debug.log
+*.log
+
+# Database
+*.db
+*.db-journal
+
+# Chrome profile and cache
+chrome-profile/
+.chrome/
+
+# Screenshots and debug files
+whatsapp_qr_debug.png
+test_screenshot.png
+
+# Environment variables
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build files
+dist/
+build/

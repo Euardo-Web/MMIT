@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thunder - Instâncias</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="thunder.png">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="nav-component.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <nav-bar></nav-bar>
+
+        <main class="main-content">
+            <header class="header">
+                <div class="user-status">
+                    <span>Usuário Online</span>
+                    <span class="status-indicator online"></span>
+                </div>
+            </header>
+            <section class="content-body">
+                <div class="content-header">
+                    <div>
+                        <h1>Gerenciamento de Instâncias</h1>
+                        <p>Configure e monitore suas instâncias do WhatsApp</p>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-secondary"><span class="material-icons">refresh</span> Atualizar</button>
+                        <button class="btn btn-primary"><span class="material-icons">add</span> Nova Instância</button>
+                    </div>
+                </div>
+
+                <div class="dashboard-cards">
+                    <div class="card">
+                        <span class="material-icons icon">dns</span>
+                        <h3>Total de Instâncias</h3>
+                        <p class="count">0</p>
+                    </div>
+                </div>
+                
+                <section class="instances-panel">
+                    <div class="instances-list">
+                        <div class="instances-header">
+                            <h2>Instâncias</h2>
+                            <button id="new-instance" class="btn btn-primary"><span class="material-icons">add</span> Nova</button>
+                        </div>
+                        <ul id="instances-ul">
+                            <!-- dynamically filled -->
+                        </ul>
+                    </div>
+
+                    <div class="instance-edit">
+                        <h2 id="form-title">Criar / Editar Instância</h2>
+                        <form id="instance-form">
+                            <input type="hidden" id="inst-id">
+                            <label>Nome da Instância</label>
+                            <input id="inst-name" type="text" required maxlength="100" placeholder="Digite o nome da instância">
+
+                            <label>Provedor</label>
+                            <select id="inst-provider">
+                                <option value="selenium">Selenium (local)</option>
+                                <option value="zapi">Z-API (remoto)</option>
+                            </select>
+
+                            <label>ID da instância na Z-API (apenas leitura)</label>
+                            <input id="inst-zapi-id" type="text" readonly placeholder="(será preenchido se provider = zapi)">
+
+                            <label>ID 1</label>
+                            <input id="inst-id-1" type="text" maxlength="50" placeholder="ID opcional">
+                            <label>ID 2</label>
+                            <input id="inst-id-2" type="text" maxlength="50" placeholder="ID opcional">
+                            <label>ID 3</label>
+                            <input id="inst-id-3" type="text" maxlength="50" placeholder="ID opcional">
+
+                            <label>Mensagem padrão</label>
+                            <textarea id="inst-mensagem" rows="3" maxlength="1000" placeholder="Mensagem padrão para esta instância (opcional)"></textarea>
+
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">Salvar</button>
+                                <button type="button" id="cancel-edit" class="btn btn-secondary">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

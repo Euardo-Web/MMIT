@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thunder - Grupos</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="thunder.png">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <script src="nav-component.js" defer></script>
+</head>
+<body>
+  <div class="container">
+    <nav-bar></nav-bar>
+
+    <main class="main-content">
+      <header class="header">
+        <div class="user-status">
+          <span>Usuários Online</span>
+          <span class="status-indicator online"></span>
+        </div>
+      </header>
+
+      <section class="content-body">
+        <div class="content-header">
+          <div>
+            <h1>Grupos</h1>
+            <p>Gerencie os grupos do sistema</p>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary"><span class="material-icons">add</span> Novo Grupo</button>
+            <button id="init-bot" class="btn btn-success" style="margin-left:8px"><span class="material-icons">smart_toy</span> Inicializar Bot</button>
+            <button id="restart-bot" class="btn btn-warning" style="margin-left:8px"><span class="material-icons">refresh</span> Reiniciar Bot</button>
+            <button id="stop-bot" class="btn btn-danger" style="margin-left:8px"><span class="material-icons">stop</span> Parar Bot</button>
+            <button id="load-groups" class="btn btn-secondary" style="margin-left:8px"><span class="material-icons">refresh</span> Carregar Grupos</button>
+            <a href="qrcode.html" class="btn btn-info" style="margin-left:8px"><span class="material-icons">qr_code</span> QR Code</a>
+          </div>
+        </div>
+
+        <!-- Status do Bot -->
+        <div class="bot-status" id="bot-status">
+          <div class="status-item">
+            <span class="status-label">Status do Bot:</span>
+            <span class="status-value" id="bot-status-text">Verificando...</span>
+            <span class="status-indicator" id="bot-status-indicator"></span>
+          </div>
+        </div>
+
+        <!-- Área que exibirá a lista de contatos/carregados do WhatsApp -->
+        <div class="groups-list" aria-live="polite">
+          <h2>Contatos e Grupos do WhatsApp</h2>
+          <p class="muted">Primeiro inicialize o bot, depois clique em "Carregar Grupos" para buscar contatos e grupos do WhatsApp Web.</p>
+
+          <div class="group-search-wrapper">
+            <input id="group-search" class="group-search" type="search" placeholder="Pesquisar contatos ou grupos..." aria-label="Pesquisar contatos" />
+            <button id="clear-search" class="btn btn-secondary" title="Limpar pesquisa">Limpar</button>
+          </div>
+
+          <div class="groups-scroll" id="groups-scroll" tabindex="0">
+            <p class="muted" id="groups-empty">Nenhum grupo/contato carregado.</p>
+            <!-- lista de contatos será inserida aqui -->
+          </div>
+        </div>
+
+        <div class="send-panel">
+          <h2>Enviar mensagem</h2>
+          <form id="send-form">
+            <label for="grupos">Grupos / contatos (uma por linha)</label>
+            <textarea id="grupos" rows="4" placeholder="GRUPO DA FAMÍLIA\nGRUPO DE VENDAS"></textarea>
+
+            <label for="mensagem">Mensagem</label>
+            <textarea id="mensagem" rows="3" placeholder="Mensagem a enviar"></textarea>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Enviar</button>
+              <span id="job-status" style="margin-left:12px"></span>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
