@@ -361,13 +361,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const botStatusText = document.getElementById('bot-status-text');
   const botStatusIndicator = document.getElementById('bot-status-indicator');
 
-  // Check bot status
+  // Check API status
   async function checkBotStatus() {
     try {
       const res = await fetch('/api/health');
       if (res.ok) {
         const data = await res.json();
-        updateBotStatus(data.bot_status);
+        updateBotStatus(data.api_status);
       }
     } catch (error) {
       updateBotStatus('error');
@@ -379,11 +379,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!botStatusText || !botStatusIndicator) return;
     
     const statusMap = {
-      'not_started': { text: 'Não Iniciado', class: 'offline', color: '#f44336' },
-      'initializing': { text: 'Inicializando...', class: 'pending', color: '#ff9800' },
-      'connected': { text: 'Conectado', class: 'online', color: '#4caf50' },
-      'disconnected': { text: 'Desconectado', class: 'offline', color: '#f44336' },
-      'error': { text: 'Erro', class: 'error', color: '#f44336' }
+      'available': { text: 'API Disponível', class: 'online', color: '#4caf50' },
+      'unavailable': { text: 'API Indisponível', class: 'offline', color: '#f44336' },
+      'error': { text: 'Erro na API', class: 'error', color: '#f44336' }
     };
     
     const statusInfo = statusMap[status] || statusMap['error'];
@@ -392,19 +390,30 @@ document.addEventListener('DOMContentLoaded', () => {
     botStatusIndicator.style.backgroundColor = statusInfo.color;
   }
 
-  // Initialize bot
+  // Initialize first available instance
   async function initBot() {
     try {
       initBotBtn.disabled = true;
       initBotBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Inicializando...';
-      updateBotStatus('initializing');
       
-      const res = await fetch('/api/bot/start', { method: 'POST' });
+      // Get first available instance
+      const instancesRes = await fetch('/api/instances');
+      if (!instancesRes.ok) {
+        throw new Error('Nenhuma instância encontrada. Crie uma instância primeiro.');
+      }
+      
+      const instancesData = await instancesRes.json();
+      if (!instancesData.instances || instancesData.instances.length === 0) {
+        throw new Error('Nenhuma instância encontrada. Crie uma instância primeiro.');
+      }
+      
+      const instance = instancesData.instances[0];
+      const res = await fetch(`/api/instance/${instance.id}/start`, { method: 'POST' });
       const data = await res.json();
       
       if (res.ok) {
         showNotification(data.message, 'success');
-        updateBotStatus(data.bot_status);
+        updateBotStatus('available');
         
         // Check status periodically
         setTimeout(checkBotStatus, 2000);
@@ -415,30 +424,46 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBotStatus('error');
       }
     } catch (error) {
-      console.error('Erro ao inicializar bot:', error);
-      showNotification('Erro ao inicializar bot: ' + error.message, 'error');
+      console.error('Erro ao inicializar instância:', error);
+      showNotification('Erro ao inicializar instância: ' + error.message, 'error');
       updateBotStatus('error');
     } finally {
       if (initBotBtn) {
         initBotBtn.disabled = false;
-        initBotBtn.innerHTML = '<span class="material-icons">smart_toy</span> Inicializar Bot';
+        initBotBtn.innerHTML = '<span class="material-icons">smart_toy</span> Inicializar Instância';
       }
     }
   }
 
-  // Restart bot
+  // Restart first available instance
   async function restartBot() {
     try {
       restartBotBtn.disabled = true;
       restartBotBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Reiniciando...';
-      updateBotStatus('initializing');
       
-      const res = await fetch('/api/bot/restart', { method: 'POST' });
+      // Get first available instance
+      const instancesRes = await fetch('/api/instances');
+      if (!instancesRes.ok) {
+        throw new Error('Nenhuma instância encontrada.');
+      }
+      
+      const instancesData = await instancesRes.json();
+      if (!instancesData.instances || instancesData.instances.length === 0) {
+        throw new Error('Nenhuma instância encontrada.');
+      }
+      
+      const instance = instancesData.instances[0];
+      
+      // Stop and start the instance
+      await fetch(`/api/instance/${instance.id}/stop`, { method: 'POST' });
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+      
+      const res = await fetch(`/api/instance/${instance.id}/start`, { method: 'POST' });
       const data = await res.json();
       
       if (res.ok) {
-        showNotification(data.message, 'success');
-        updateBotStatus(data.bot_status);
+        showNotification('Instância reiniciada com sucesso', 'success');
+        updateBotStatus('available');
         
         // Check status periodically
         setTimeout(checkBotStatus, 2000);
@@ -449,39 +474,51 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBotStatus('error');
       }
     } catch (error) {
-      console.error('Erro ao reiniciar bot:', error);
-      showNotification('Erro ao reiniciar bot: ' + error.message, 'error');
+      console.error('Erro ao reiniciar instância:', error);
+      showNotification('Erro ao reiniciar instância: ' + error.message, 'error');
       updateBotStatus('error');
     } finally {
       if (restartBotBtn) {
         restartBotBtn.disabled = false;
-        restartBotBtn.innerHTML = '<span class="material-icons">refresh</span> Reiniciar Bot';
+        restartBotBtn.innerHTML = '<span class="material-icons">refresh</span> Reiniciar Instância';
       }
     }
   }
 
-  // Stop bot
+  // Stop first available instance
   async function stopBot() {
     try {
       stopBotBtn.disabled = true;
       stopBotBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Parando...';
       
-      const res = await fetch('/api/bot/stop', { method: 'POST' });
+      // Get first available instance
+      const instancesRes = await fetch('/api/instances');
+      if (!instancesRes.ok) {
+        throw new Error('Nenhuma instância encontrada.');
+      }
+      
+      const instancesData = await instancesRes.json();
+      if (!instancesData.instances || instancesData.instances.length === 0) {
+        throw new Error('Nenhuma instância encontrada.');
+      }
+      
+      const instance = instancesData.instances[0];
+      const res = await fetch(`/api/instance/${instance.id}/stop`, { method: 'POST' });
       const data = await res.json();
       
       if (res.ok) {
         showNotification(data.message, 'success');
-        updateBotStatus('not_started');
+        updateBotStatus('unavailable');
       } else {
         showNotification('Erro: ' + data.message, 'error');
       }
     } catch (error) {
-      console.error('Erro ao parar bot:', error);
-      showNotification('Erro ao parar bot: ' + error.message, 'error');
+      console.error('Erro ao parar instância:', error);
+      showNotification('Erro ao parar instância: ' + error.message, 'error');
     } finally {
       if (stopBotBtn) {
         stopBotBtn.disabled = false;
-        stopBotBtn.innerHTML = '<span class="material-icons">stop</span> Parar Bot';
+        stopBotBtn.innerHTML = '<span class="material-icons">stop</span> Parar Instância';
       }
     }
   }
@@ -491,21 +528,34 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       loadGroupsBtn.disabled = true;
       loadGroupsBtn.innerHTML = '<span class="material-icons">hourglass_empty</span> Carregando...';
-      const res = await fetch('/api/contacts');
+      
+      // Get first available instance
+      const instancesRes = await fetch('/api/instances');
+      if (!instancesRes.ok) {
+        throw new Error('Nenhuma instância encontrada. Crie uma instância primeiro.');
+      }
+      
+      const instancesData = await instancesRes.json();
+      if (!instancesData.instances || instancesData.instances.length === 0) {
+        throw new Error('Nenhuma instância encontrada. Crie uma instância primeiro.');
+      }
+      
+      const instance = instancesData.instances[0];
+      const res = await fetch(`/api/instance/${instance.id}/contacts`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}: ${res.statusText}`);
       }
       const data = await res.json();
       renderContactsList(data.contacts || []);
-      showNotification('Grupos carregados', 'success');
+      showNotification(data.message || 'Contatos carregados', 'info');
     } catch (err) {
-      console.error('Erro ao carregar grupos:', err);
-      showNotification('Erro ao carregar grupos: ' + (err.message || err), 'error');
+      console.error('Erro ao carregar contatos:', err);
+      showNotification('Erro ao carregar contatos: ' + (err.message || err), 'error');
     } finally {
       if (loadGroupsBtn) {
         loadGroupsBtn.disabled = false;
-        loadGroupsBtn.innerHTML = '<span class="material-icons">refresh</span> Carregar Grupos';
+        loadGroupsBtn.innerHTML = '<span class="material-icons">refresh</span> Carregar Contatos';
       }
     }
   }
